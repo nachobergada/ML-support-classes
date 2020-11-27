@@ -45,7 +45,7 @@ class GridSearchCVResults():
         Function that plots the different score values for each ranked combination
         '''
         split_cols = [x for x in self.df_res.columns if x.find("split")!=-1] # only get split columns
-        melt_ = sexf.df_res.melt(id_vars=["rank_test_score"], value_vars=split_cols)
+        melt_ = self.df_res.melt(id_vars=["rank_test_score"], value_vars=split_cols)
         melt_["variable"] = melt_["variable"].apply(lambda x: "test" if x.find("_test_")!=-1 else "train")
         if not greater_is_better: melt_["value"] = abs(melt_["value"])
         fig = plt.figure(figsize=(10,5))
