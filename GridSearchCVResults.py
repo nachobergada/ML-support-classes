@@ -40,22 +40,28 @@ class GridSearchCVResults():
     def show(self):
         '''
         show
-        Method that plots the different score values for each ranked combination
+        Function that plots the different score values for each ranked combination
         '''
         split_cols = [x for x in self.df_res.columns if x.find("split")!=-1] # only get split columns
         melt_ = self.df_res.melt(id_vars=["rank_test_score"], value_vars=split_cols)
         melt_["variable"] = melt_["variable"].apply(lambda x: "test" if x.find("_test_")!=-1 else "train")
         if not greater_is_better: melt_["value"] = abs(melt_["value"])
-        fig = plt.figure(figsize=(10,5))
-        sns.lineplot(data=melt_, x="rank_test_score", y="value", hue="variable")
-        plt.xticks(melt_["rank_test_score"])
-        plt.grid()
+        fig, axes = plt.subplots(2, 1, figsize=(12,7), sharex=False)
+        sns.lineplot(data=melt_, x="rank_test_score", y="value", hue="variable", ax=axes[0])
+        axes[0].set_title("Score per rank (train and test)")
+        axes[0].set_xticks(melt_["rank_test_score"])
+        axes[0].grid()
+        sns.lineplot(x=self.df_res["rank_test_score"], y=np.abs(self.df_res["%mean_diff"]), ax=axes[1])
+        axes[1].set_title("DiffScore per rank (test vs train)")
+        axes[1].set_xticks(melt_["rank_test_score"])
+        axes[1].grid()
+        plt.tight_layout(pad=1)
         plt.show()
         
     def get_params(self, rank=1):
         '''
         get_params
-        Method that prints the parameters of the selected ranked option
+        Function that prints the parameters of the selected ranked option
         
         params:
         rank: number of rank to display
