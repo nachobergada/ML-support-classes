@@ -15,11 +15,13 @@ class GridSearchCVResults():
     d_res = None # cv_results dictionary
     df_res = None # dataframe with the tabulated results
     split_cols = [] # list with the params that vary
+    greater_is_better = True # False if the score is better the bigger (e.g R2) or better the smaller (eg RMSE)
     
     def __init__(self, oGridSearchCV, greater_is_better = True):
         
         self.d_res = oGridSearchCV.cv_results_
         self.df_res = pd.DataFrame(self.d_res["params"])
+        self.greater_is_better = greater_is_better
         
         for key in self.d_res:
             if (str(key).find("split"))!=-1: #it is a split results key
@@ -45,7 +47,7 @@ class GridSearchCVResults():
         split_cols = [x for x in self.df_res.columns if x.find("split")!=-1] # only get split columns
         melt_ = self.df_res.melt(id_vars=["rank_test_score"], value_vars=split_cols)
         melt_["variable"] = melt_["variable"].apply(lambda x: "test" if x.find("_test_")!=-1 else "train")
-        if not greater_is_better: melt_["value"] = abs(melt_["value"])
+        if not self.greater_is_better: melt_["value"] = abs(melt_["value"])
         fig, axes = plt.subplots(2, 1, figsize=(12,7), sharex=False)
         sns.lineplot(data=melt_, x="rank_test_score", y="value", hue="variable", ax=axes[0])
         axes[0].set_title("Score per rank (train and test)")
@@ -67,7 +69,7 @@ class GridSearchCVResults():
         rank: number of rank to display
         '''
         display(HTML(f'<b>Showing parameters for rank {rank}</b><br>'))
-        cols_to_show = [ele for ele in self.df_res.columns if ele not in split_cols]
+        cols_to_show = [ele for ele in self.df_res.columns if ele not in self.split_cols]
         display(self.df_res.loc[self.df_res["rank_test_score"]==(rank),cols_to_show].T)
     
     def show_results(self):
