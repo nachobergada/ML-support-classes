@@ -23,7 +23,7 @@ class GridSearchCVResults():
         
         for key in self.d_res:
             if (str(key).find("split"))!=-1: #it is a split results key
-                split_cols.append(key)
+                self.split_cols.append(key)
                 self.df_res[key] = pd.Series(self.d_res[key])
         self.df_res.insert(0, "rank_test_score", pd.Series(self.d_res["rank_test_score"]))
         self.df_res.insert(1, "mean_test_score", pd.Series(self.d_res["mean_test_score"]))
