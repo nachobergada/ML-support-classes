@@ -14,8 +14,7 @@ class GridSearchCVResults():
     
     d_res = None # cv_results dictionary
     df_res = None # dataframe with the tabulated results
-    variable_params = None # list with the params that vary
-    static_params = None # list with the params that do not vary
+    split_cols = [] # list with the params that vary
     
     def __init__(self, oGridSearchCV, greater_is_better = True):
         
@@ -24,6 +23,7 @@ class GridSearchCVResults():
         
         for key in self.d_res:
             if (str(key).find("split"))!=-1: #it is a split results key
+                split_cols.append(key)
                 self.df_res[key] = pd.Series(self.d_res[key])
         self.df_res.insert(0, "rank_test_score", pd.Series(self.d_res["rank_test_score"]))
         self.df_res.insert(1, "mean_test_score", pd.Series(self.d_res["mean_test_score"]))
@@ -33,8 +33,6 @@ class GridSearchCVResults():
         self.df_res.insert(5, "%mean_diff", round(100*(pd.Series(self.d_res["mean_test_score"]) - pd.Series(self.d_res["mean_train_score"]))/pd.Series(self.d_res["std_train_score"]),2))
         
         # and now, we leave only the columns that have different information
-        for column in df_results.columns:
-            if self.df_res[column].nunique()==1: self.df_res.drop(column, axis=1, inplace=True)
         self.df_res.sort_values(by="rank_test_score", inplace=True)
         
         self.show()
@@ -42,7 +40,7 @@ class GridSearchCVResults():
     def show(self):
         '''
         show
-        Function that plots the different score values for each ranked combination
+        Method that plots the different score values for each ranked combination
         '''
         split_cols = [x for x in self.df_res.columns if x.find("split")!=-1] # only get split columns
         melt_ = self.df_res.melt(id_vars=["rank_test_score"], value_vars=split_cols)
@@ -57,18 +55,14 @@ class GridSearchCVResults():
     def get_params(self, rank=1):
         '''
         get_params
-        Function that prints the parameters of the selected ranked option
+        Method that prints the parameters of the selected ranked option
         
         params:
         rank: number of rank to display
         '''
-        display(HTML(
-                f'<b>Showing parameters for rank {rank}</b><br> \
-                {self.d_res["params"][rank]}<br> \
-                Mean test score: {self.df_res.loc[self.df_res["rank_test_score"]==(rank),"mean_test_score"].values[0]}<br> \
-                Mean train score: {self.df_res.loc[self.df_res["rank_test_score"]==(rank),"mean_train_score"].values[0]}<br>'
-            )
-        )
+        display(HTML(f'<b>Showing parameters for rank {rank}</b><br>'))
+        cols_to_show = [ele for ele in self.df_res.columns if ele not in split_cols]
+        display(self.df_res.loc[self.df_res["rank_test_score"]==(rank),cols_to_show].T)
     
     def show_results(self):
         '''
