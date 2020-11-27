@@ -6,3 +6,5 @@ During my different ML projects, I always try to standarize as many things as po
 GridSearchCVResults: is a class that helps visualize the results of a GridSearchCV process. GridSearchCV does not take care about overfitting or underfitting, and just selects the model with the best test metric, no matter if there are significant differences between test and train.
 
 LinearRegressionValidator: class that helps check the main assumptions of a linear regression, to make sure the model built it is solid.
+
+ProcessDataset: class to keep control and repeate typical dataset processing tasks such as OHE, OrdinalEncoding, etc...
