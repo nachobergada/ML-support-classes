@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from IPython.core.display import display, HTML
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -16,7 +17,7 @@ class EDA:
     potential_features = {} # dictionary with potential features that we may have to create
     collinear = pd.DataFrame() # a dataframe that will include potential multicollinear columns to be droped.
     
-    def __init__(self, df, target, category_sensibility=10, forced_number=[], forced_binary=[], forced_category=[], to_excel=False):
+    def __init__(self, df, target=None, category_sensibility=10, forced_number=[], forced_binary=[], forced_category=[], forced_datetime=[], forced_datetime_orig_format=[], to_excel=False):
         '''
         init EDA
         Class that allow a quick analysis of the dataset variables.
@@ -24,8 +25,11 @@ class EDA:
         df: dataset to analyze
         target: name of the target column
         category_sensibility: number of unique values below which a numerical variable will be analyzed as a category
-        forced_category: list of columns that we want to be treated as category even though they may not look like
+        forced_number: list of columns that we want to be treated as number even though they may not look like
         forced_binary: list of columns that we want to be treated as binary
+        forced_category: list of columns that we want to be treated as category even though they may not look like
+        forced_datetime: list of columns that we want to be treated as datetime --> must indicate format
+        forced_datetime_orig_format: list of formats to parse the forced_datetime columns
         '''
 
         # variables locales
@@ -34,9 +38,13 @@ class EDA:
         # Copy the original info to the class
         self.df = df.copy()
         self.target = target
+
+        # Before doing anything, we must force convert datetime columns
+        for icolumn, column in enumerate(forced_datetime):
+          self.df[column] = pd.to_datetime(self.df[column], format=forced_datetime_orig_format[icolumn])
         
         # We will create a descriptive dataset that will help us do the analysis
-        df_desc = df.describe(include="all").T
+        df_desc = self.df.describe(include="all", datetime_is_numeric=False).T
 
         # Create a number of vars that will describe each column --> WARNING: it is necessary to sort them later in the code. If not, they will not show.
         df_desc["type"] = np.nan
@@ -59,20 +67,32 @@ class EDA:
         # Loop throught the dataset columns
         for column in df_desc.index:        
             # common descriptors
-            df_desc.loc[column,"dtype"] = df[column].dtype
-            df_desc.loc[column,"count"] = df[column].count()
-            df_desc.loc[column,"nulls"] = df[df[column].isna()][column].size
-            df_desc.loc[column,"nulls_perc"] = round(df_desc.loc[column,"nulls"]/df[column].size,2)
-            df_desc.loc[column,"unique"] = df[column].nunique()
+            df_desc.loc[column,"dtype"] = self.df[column].dtype
+            df_desc.loc[column,"count"] = self.df[column].count()
+            df_desc.loc[column,"nulls"] = self.df[self.df[column].isna()][column].size
+            df_desc.loc[column,"nulls_perc"] = round(df_desc.loc[column,"nulls"]/self.df[column].size,2)
+            df_desc.loc[column,"unique"] = self.df[column].nunique()
 
             if df_desc.loc[column,"unique"] <= MAX_UNIQUE_VALUES_PRINTED: 
-                df_desc.at[column,"unique_values"] = list(df[column].unique())
+                df_desc.at[column,"unique_values"] = list(self.df[column].unique())
             else:
                 df_desc.at[column,"unique_values"] = []
-
+            
             # Depeding on the DATATYPE
-            # FIRST, we make sure this is not a FORCED NUMBER
-            if (column in forced_number):
+            # FIRST, we make sure it is not a FORCED DATETIME
+            if (column in forced_datetime):
+              # Type of data
+              df_desc.loc[column,"type"] = "datetime"
+              df_desc.loc[column,"type_isforced"] = 1
+              # Check for outliers
+              bounds, df_desc.loc[column,"has_outliers"] = self.outliers(column, type="IQR")
+              df_desc.at[column,"outliers"] = bounds
+              # skweness
+              _s = self.df[column].astype(int) / 10**9 # to calculate skew we convert to unix time. the astype int returns nanoseconds --> 10^9 seconds
+              df_desc.loc[column,"skew"] = _s.skew()
+              del _s
+            # SECOND, we make sure this is not a FORCED NUMBER
+            elif (column in forced_number):
                 # Type of data
                 df_desc.loc[column,"type"] = "number"
                 df_desc.loc[column,"type_isforced"] = 1
@@ -81,31 +101,31 @@ class EDA:
                 bounds, df_desc.loc[column,"has_outliers"] = self.outliers(column, type="IQR")
                 df_desc.at[column,"outliers"] = bounds
                 # skweness
-                df_desc.loc[column,"skew"] = df[column].skew()
-            # SECOND, we make sure this is not a forced FORCED CATEGORY
+                df_desc.loc[column,"skew"] = self.df[column].skew()
+            # THIRD, we make sure this is not a forced FORCED CATEGORY
             elif (column in forced_category):
                 # Tyep of data
                 df_desc.loc[column,"type"] = "category"
                 df_desc.loc[column,"type_isforced"] = 1
 
-                if (df[column].dtype=="int") |  (df[column].dtype=="float"):
-                    df_desc.loc[column,"min"] = df[column].min()
-                    df_desc.loc[column,"max"] = df[column].max()
+                if (self.df[column].dtype=="int") |  (self.df[column].dtype=="float"):
+                    df_desc.loc[column,"min"] = self.df[column].min()
+                    df_desc.loc[column,"max"] = self.df[column].max()
 
                 # Modes and frequencies
-                _s_modefreq = df[column].value_counts().sort_values(ascending=False)
-                if (_s_modefreq.size < df[column].size): 
+                _s_modefreq = self.df[column].value_counts().sort_values(ascending=False)
+                if (_s_modefreq.size < self.df[column].size): 
                     df_desc.loc[column,"mode"] = _s_modefreq.index[0]
                     df_desc.loc[column,"freq"] = _s_modefreq.iloc[0]
                     df_desc.loc[column,"freq_perc"] = round(_s_modefreq.iloc[0]/df_desc.loc[column,"count"],2)
-            # THIRD, we make sure this is not a FORCED BINARY
+            # FOURTH, we make sure this is not a FORCED BINARY
             elif (column in forced_binary):
                 # Type of data
                 df_desc.loc[column,"type"] = "binary"
                 df_desc.loc[column,"type_isforced"] = 1
 
-            # FOURTH INT OR FLOAT (and not forced, in case)
-            elif (((df[column].dtype == "int") | (df[column].dtype == "float")) & (column not in forced_category) & (column not in forced_binary)):
+            # FIFTH INT OR FLOAT (and not forced, in case)
+            elif (((self.df[column].dtype == "int") | (self.df[column].dtype == "float")) & (column not in forced_category) & (column not in forced_binary) & (column not in forced_datetime)):
 
                 # Is it numeric , binary or categorical
                 if ((df_desc.loc[column,"nulls"]==0) & (df_desc.loc[column,"unique"]==2) & (0 in list(df_desc.loc[column,"unique_values"]))):
@@ -126,41 +146,42 @@ class EDA:
                             bounds, df_desc.loc[column,"has_outliers"] = self.outliers(column, type="IQR")
                             df_desc.at[column,"outliers"] = bounds
                             # skweness
-                            df_desc.loc[column,"skew"] = df[column].skew()
+                            df_desc.loc[column,"skew"] = self.df[column].skew()
 
                 # Modes and frequencies only if category
                 if ((df_desc.loc[column,"type"] == "category") | (df_desc.loc[column,"type"] == "binary")):
-                    _s_modefreq = df[column].value_counts().sort_values(ascending=False)
+                    _s_modefreq = self.df[column].value_counts().sort_values(ascending=False)
                     # Si la serie de frecuencias es más pequeña que la serie de la columna, entonces tiene algo de sentido informarlo
-                    if (_s_modefreq.size < df[column].size): 
+                    if (_s_modefreq.size < self.df[column].size): 
                         df_desc.loc[column,"mode"] = _s_modefreq.index[0]
                         df_desc.loc[column,"freq"] = _s_modefreq.iloc[0]
                         df_desc.loc[column,"freq_perc"] = round(_s_modefreq.iloc[0]/df_desc.loc[column,"count"],2)
-            # FIFTH, objects
-            elif df[column].dtype == "object":
+            # SIXTH, objects
+            elif ((self.df[column].dtype == "object")  & (column not in forced_datetime)):
                 # Type of data
                 df_desc.loc[column,"type"] = "category"
                 df_desc.loc[column,"type_isforced"] = 0
 
                 # Modes and frequencies
                 if (df_desc.loc[column,"type"] == "category"):
-                    _s_modefreq = df[column].value_counts().sort_values(ascending=False)
-                    if ((_s_modefreq.size < df[column].size) & (_s_modefreq.size>0)): # we include >0. If there are no unique values (all nulls) it would crash
+                    _s_modefreq = self.df[column].value_counts().sort_values(ascending=False)
+                    if ((_s_modefreq.size < self.df[column].size) & (_s_modefreq.size>0)): # we include >0. If there are no unique values (all nulls) it would crash
                         df_desc.loc[column,"mode"] = _s_modefreq.index[0]
                         df_desc.loc[column,"freq"] = _s_modefreq.iloc[0]
                         df_desc.loc[column,"freq_perc"] = round(_s_modefreq.iloc[0]/df_desc.loc[column,"count"],2)
-            elif df[column].dtype == "bool":
+            # SEVENTH, boolean
+            elif self.df[column].dtype == "bool":
                 # Type of data
                 df_desc.loc[column,"type"] = "binary"
                 df_desc.loc[column,"type_isforced"] = 1
 
-                _s_modefreq = df[column].value_counts().sort_values(ascending=False)
-                if ((_s_modefreq.size < df[column].size) & (_s_modefreq.size>0)): # # we include >0. If there are no unique values (all nulls) it would crash
+                _s_modefreq = self.df[column].value_counts().sort_values(ascending=False)
+                if ((_s_modefreq.size < self.df[column].size) & (_s_modefreq.size>0)): # # we include >0. If there are no unique values (all nulls) it would crash
                     df_desc.loc[column,"mode"] = _s_modefreq.index[0]
                     df_desc.loc[column,"freq"] = _s_modefreq.iloc[0]
                     df_desc.loc[column,"freq_perc"] = round(_s_modefreq.iloc[0]/df_desc.loc[column,"count"],2)
             else:
-                print("******************************* columna", column, "es de tipo", df[column].dtype)
+                print("******************************* columna", column, "es de tipo", self.df[column].dtype)
 
         # Sort the columns for better comprehension
         columns = [
@@ -235,16 +256,19 @@ class EDA:
 
         return bounds, has_outliers
     
-    def univar(self, column, log=False, sort="weight", fillna=np.nan):
+    def univar(self, column, logx=False, logy=False, sort="weight", fillna=np.nan, datetime_precision = 'D', datetime_aggregate = False):
         '''
         uni
         Function to do a univariant analysis of the corresponding column of the dataset
         
         Parameters
         column: column to analyze
-        log: for logistic y scale
+        logx: for logistic x scale
+        logy: for logistic y scale
         sort: weight (default) or relevance (target)
         fillna: value to replace nulls in categorical descriptions (if wanted)
+        datetime_precision = for datetime, which precision wants to be used when transforming to unix datetime (Y = years, M = months, D = days, H = hours, S = seconds)
+        datetime_aggregate = for datetime, True if we want to aggregate per precision
     
         Returns
         Variable visualization
@@ -263,147 +287,163 @@ class EDA:
         display(HTML(pd.DataFrame(self.df_desc.loc[column,l_data]).T.to_html()))
 
         # crosstable when column and target are category/binary
-        if ((self.df_desc.loc[column,"type"]!="number") & (self.df_desc.loc[self.target,"type"]!="number")):
-            
-            display(HTML("********** <b>Valores únicos vs. Target (not nulls)</b> *************"))
-            _df = pd.crosstab(self.df[column], self.df[self.target], margins= True, margins_name='Count')
-            _df.sort_values(by="Count", ascending=False, inplace=True)
-            _df.insert(0,"%Weight",value=0)
-            _df.insert(1,"%Positive",value=0)
-            _df["%Weight"] = round((_df.iloc[:,1]+_df.iloc[:,2])/(self.df[column].value_counts().sum()),2)
-            _df["%Positive"] = round(_df.iloc[:,2]/_df.iloc[:,4],2)
-            _df = _df.reindex(columns=list(_df.columns[[-1]].append(_df.columns[:-1])))
-            display(HTML(_df.to_html()))
+        if self.target is not None: # only for supervised learning.
+          if ((self.df_desc.loc[column,"type"]!="number") & (self.df_desc.loc[self.target,"type"]!="number")):
+              
+              display(HTML("********** <b>Valores únicos vs. Target (not nulls)</b> *************"))
+              _df = pd.crosstab(self.df[column], self.df[self.target], margins= True, margins_name='Count')
+              _df.sort_values(by="Count", ascending=False, inplace=True)
+              _df.insert(0,"%Weight",value=0)
+              _df.insert(1,"%Positive",value=0)
+              _df["%Weight"] = round((_df.iloc[:,1]+_df.iloc[:,2])/(self.df[column].value_counts().sum()),2)
+              _df["%Positive"] = round(_df.iloc[:,2]/_df.iloc[:,4],2)
+              _df = _df.reindex(columns=list(_df.columns[[-1]].append(_df.columns[:-1])))
+              display(HTML(_df.to_html()))
         
         # if COLUMN is NUMBER
         if (self.df_desc.loc[column,"type"]=="number"):
             # Univariant analysis
-            fig, axes = plt.subplots(3 if column != self.target else 2, 1, figsize=(10,7), sharex=True)
+            fig, axes = plt.subplots(3 if ((self.target is not None) & (column != self.target)) else 2, 1, figsize=(10,7), sharex=True)
             fig.tight_layout(pad=3)
             plt.xticks(rotation=90)
             axes[0].set_title("{} distribution (skw: {})".format(column,round(self.df[column].skew(),2)))
             axes[0].grid(True)
             axes[0].margins(0.2)
             try:
-                sns.distplot(
+                g = sns.distplot(
                     self.df[column], 
                     ax = axes[0], 
                     fit = norm, 
                 )
+                if logx: g.set_xscale("log")
+                if logy: g.set_yscale("log")
             except: pass
             
             axes[1].set_title("{} distribution".format(column))
             axes[1].grid(True)
             axes[1].margins(0.2)
-            sns.boxplot(
+            g = sns.boxplot(
                 x = self.df[column], 
                 ax = axes[1],  
             )
+            if logx: g.set_xscale("log")
+            if logy: g.set_yscale("log")
             
             # Bivariant analysis, only if not target
-            if column != self.target:
-                # if TARGET is NUMBER
-                if self.df_desc.loc[self.target,"type"]=="number":
-                    axes[2].set_title("{} vs {}".format(column, self.target))
-                    axes[2].grid(True)
-                    axes[2].margins(0.2)
-                    sns.regplot(
-                        x = self.df[column],
-                        y = self.df[self.target], 
-                        ax = axes[2], 
-                    )
-            
-                # if TARGET is BINARY or CATEGORY
-                if self.df_desc.loc[self.target,"type"]!="number":
+            if self.target is not None: # only for supervised learning.
+              if column != self.target:
+                  # if TARGET is NUMBER
+                  if self.df_desc.loc[self.target,"type"]=="number":
+                      axes[2].set_title("{} vs {}".format(column, self.target))
+                      axes[2].grid(True)
+                      axes[2].margins(0.2)
+                      sns.regplot(
+                          x = self.df[column],
+                          y = self.df[self.target], 
+                          ax = axes[2], 
+                      )
+              
+                  # if TARGET is BINARY or CATEGORY
+                  if self.df_desc.loc[self.target,"type"]!="number":
 
-                    # Graficamos sólo con los datos que tienen suficiente volumen
-                    _pivot = pd.pivot_table(self.df, index=[column], values=self.target, aggfunc=[np.mean, len])
-                    _pivot.reset_index(inplace=True)
-                    _pivot.columns = _pivot.columns.get_level_values(0)
-                    _pivot = _pivot[_pivot["len"]>=MIN_DATA_TO_NODE] #Eliminamos los registros que no aportan volumen suficiente
+                      # Graficamos sólo con los datos que tienen suficiente volumen
+                      _pivot = pd.pivot_table(self.df, index=[column], values=self.target, aggfunc=[np.mean, len])
+                      _pivot.reset_index(inplace=True)
+                      _pivot.columns = _pivot.columns.get_level_values(0)
+                      _pivot = _pivot[_pivot["len"]>=MIN_DATA_TO_NODE] #Eliminamos los registros que no aportan volumen suficiente
 
-                    plt.figure(figsize=(15,3))
-                    plt.xticks(rotation=90)
-                    plt.title("{} (order) vs % {} with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
-                    _pivot.sort_values(by="mean", ascending=False, inplace=True)
-                    sns.barplot(
-                        x=_pivot[column],
-                        y=_pivot["mean"],
-                        order=_pivot[column]
-                    )
-                    plt.show()
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} (order) vs % {} with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by="mean", ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=_pivot[column]
+                      )
+                      plt.show()
 
-                    plt.figure(figsize=(15,3))
-                    plt.xticks(rotation=90)
-                    plt.title("{} vs % {} (order) with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
-                    _pivot.sort_values(by=column, ascending=False, inplace=True)
-                    sns.barplot(
-                        x=_pivot[column],
-                        y=_pivot["mean"],
-                        order=pd.Series(_pivot[column].unique()).sort_values().to_list()
-                    )
-                    plt.show()
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} vs % {} (order) with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by=column, ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=pd.Series(_pivot[column].unique()).sort_values().to_list()
+                      )
+                      plt.show()
 
-                    plt.figure(figsize=(15,3))
-                    plt.xticks(rotation=90)
-                    plt.title("{} vs % {} with more than {} records (order)".format(column, self.target, MIN_DATA_TO_NODE))
-                    _pivot.sort_values(by="len", ascending=False, inplace=True)
-                    sns.barplot(
-                        x=_pivot[column],
-                        y=_pivot["mean"],
-                        order=_pivot[column].to_list()
-                    )
-                    plt.show()
-                
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} vs % {} with more than {} records (order)".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by="len", ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=_pivot[column].to_list()
+                      )
+                      plt.show()
+                  
             plt.show()
             
-            # if TARGET is NUMBER (this is part of the unvariant analysis)
-            if self.df_desc.loc[self.target,"type"]=="number":
-                # And we finally check the potential transformation to obtain a normal distribution
-                self.column_potential_transformation(column)
+            # if COLUMN is NUMBER (this is part of the unvariant analysis)
+            #if self.target is not None: # only for supervised learning.
+              #if self.df_desc.loc[self.target,"type"]=="number":
+            # And we finally check the potential transformation to obtain a normal distribution
+            self.column_potential_transformation(column)
                     
         # if CATEGORY or BINARY
         if (self.df_desc.loc[column,"type"]=="category") | (self.df_desc.loc[column,"type"]=="binary"):
-            fig, axes = plt.subplots(2, 1, figsize=(10,5), sharex=True)
-            fig.tight_layout(pad=3)
-            plt.xticks(rotation=90)
             # Univariant analysis
             # If the number of categories is too high we show a warning
             num_categories = self.df[column].nunique()
             if (num_categories >= MAX_CATEGORIES_TO_PLOT):
-                axes[0].text(0.5, 0.5, "<b>WARNING: TOO MANY CATEGORIES TO PLOT</b>", size=24, ha='center', va='center')
-            else:
+                fig, axes = plt.subplots(1, 1, figsize=(10,3), sharex=True)
+                fig.tight_layout(pad=3)
+                plt.xticks(rotation=90)
+                display(HTML("<br><span style='font-weight:bold;color:#FF0000'>WARNING: TOO MANY CATEGORIES TO PLOT. Only plotting the 40 most relevant.</span>"))
                 s_ = self.df[column].fillna(fillna)
-                s_ = s_.value_counts().sort_values(ascending=False) 
-                axes[0].set_title("{} distribution".format(column))
-                axes[0].grid(True)
-                axes[0].margins(0.2)
-                sns.barplot(
-                    x = s_.index, 
-                    y = s_, 
-                    log = log,
-                    order = s_.index, 
-                    ax = axes[0], 
-                )
-                rects = axes[0].patches
-                labels = [str(int(np.round(100*i/s_.sum(),0)))+"%" for i in s_]
-                for rect, label in zip(rects, labels):
-                    height = rect.get_height()
-                    axes[0].text(rect.get_x() + rect.get_width()/2, height + 5, label, ha='center', va='bottom')
+                s_ = self.df[column].value_counts().sort_values(ascending=False).head(40)
+                _axes0 = axes # to avoid problems when accessing access depending on the if
+            else:
+                fig, axes = plt.subplots(2 if self.target is not None else 1, 1, figsize=(10,7 if self.target is not None else 3), sharex=True)
+                fig.tight_layout(pad=3)
+                plt.xticks(rotation=90)
+                s_ = self.df[column].fillna(fillna)
+                s_ = s_.value_counts().sort_values(ascending=False)
+                _axes0 = axes[0] if self.target is not None else axes # to avoid problems when accessing access depending on the if
             
+            _axes0.set_title("{} distribution".format(column))
+            _axes0.grid(True)
+            _axes0.margins(0.2)
+            sns.barplot(
+                x = s_.index, 
+                y = s_, 
+                log = logx,
+                order = s_.index, 
+                ax = _axes0, 
+            )
+            rects = _axes0.patches
+            labels = [str(int(np.round(100*i/s_.sum(),0)))+"%" for i in s_]
+            for rect, label in zip(rects, labels):
+                height = rect.get_height()
+                _axes0.text(rect.get_x() + rect.get_width()/2, height + 5, label, ha='center', va='bottom')
+        
             # Bivariant analysis, only if not target
-            if column != self.target:
+            if self.target is not None: # only for supervised learning.
+              if column != self.target:
                 # vs NUMERIC TARGET
                 if self.df_desc.loc[self.target,"type"]=="number":
-                    axes[1].set_title("{} vs {} distribution".format(column, self.target))
-                    axes[1].grid(True)
-                    axes[1].margins(0.2)
-                    sns.boxplot(
-                        x = self.df[column].fillna(fillna), 
-                        y = self.df[self.target], 
-                        order = s_.index, 
-                        ax = axes[1], 
-                    )
+                  axes[1].set_title("{} vs {} distribution".format(column, self.target))
+                  axes[1].grid(True)
+                  axes[1].margins(0.2)
+                  sns.boxplot(
+                    x = self.df[column].fillna(fillna), 
+                    y = self.df[self.target], 
+                    order = s_.index, 
+                    ax = axes[1], 
+                  )
                 # vs BINARY or CATEGORY TARGET
                 # we can use positive ratios, easier to plot and understand
                 if self.df_desc.loc[self.target,"type"]!="number":
@@ -422,8 +462,111 @@ class EDA:
                         order=pd.Series(self.df[column].unique()).sort_values().to_list(), # Mismo orden que los anteriores
                         ax = axes[1]
                     )
-                plt.show()
+            plt.show()
         
+        # if COLUMN is DATETIME
+        if (self.df_desc.loc[column,"type"]=="datetime"):
+            # Univariant analysis
+            fig, axes = plt.subplots(2 if ((self.target is not None) & (column != self.target)) else 1, 1, figsize=(10, 7 if ((self.target is not None) & (column != self.target)) else 3), sharex=True)
+            fig.tight_layout(pad=3)
+            plt.xticks(rotation=90)
+
+            # we will work with a transformed datetime.
+            if datetime_precision == 'Y':
+              # always aggregated
+              _s = self.df[column].dt.year
+            elif datetime_precision == 'M':
+              if datetime_aggregate: 
+                _s = self.df[column].dt.month
+              else:
+                _s = self.df[column].dt.year*100 + self.df[column].dt.month
+            else:
+              if datetime_aggregate: 
+                _s = self.df[column].dt.day
+              else:
+                _s = self.df[column].dt.year*10000 + self.df[column].dt.month*100 + self.df[column].dt.day
+            
+            # managing axes depending on the number of figures
+            if (self.target is not None) & (column != self.target):
+              _axes = axes[0]
+            else:
+              _axes = axes
+
+            _axes.set_title("{} distribution (skw: {})".format(column,round(self.df_desc.loc[column,'skew'],2)))
+            _axes.grid(True)
+            _axes.margins(0.2)
+            if _s.nunique() <= MAX_CATEGORIES_TO_PLOT: # we still can treat it as a category
+              sns.countplot(_s, ax = _axes)
+            else:
+              _axes.text(0.5, 0.5, "<b>WARNING: TOO MANY CATEGORIES TO PLOT</b>", size=18, ha='center', va='center', transform=_axes.transAxes)
+            if logx: _axes.set_xscale("log")
+            if logy: _axes.set_yscale("log")
+            
+            # Bivariant analysis, only if not target
+            if self.target is not None: # only for supervised learning.
+              if column != self.target:
+                  # if TARGET is NUMBER
+                  if self.df_desc.loc[self.target,"type"]=="number":
+                      axes[1].set_title("{} vs {}".format(column, self.target))
+                      axes[1].grid(True)
+                      axes[1].margins(0.2)
+                      sns.regplot(
+                          x = self.df[column],
+                          y = self.df[self.target], 
+                          ax = axes[1], 
+                      )
+              
+                  # if TARGET is BINARY or CATEGORY
+                  if self.df_desc.loc[self.target,"type"]!="number":
+
+                      # Graficamos sólo con los datos que tienen suficiente volumen
+                      _pivot = pd.pivot_table(self.df, index=[column], values=self.target, aggfunc=[np.mean, len])
+                      _pivot.reset_index(inplace=True)
+                      _pivot.columns = _pivot.columns.get_level_values(0)
+                      _pivot = _pivot[_pivot["len"]>=MIN_DATA_TO_NODE] #Eliminamos los registros que no aportan volumen suficiente
+
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} (order) vs % {} with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by="mean", ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=_pivot[column]
+                      )
+                      plt.show()
+
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} vs % {} (order) with more than {} records".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by=column, ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=pd.Series(_pivot[column].unique()).sort_values().to_list()
+                      )
+                      plt.show()
+
+                      plt.figure(figsize=(15,3))
+                      plt.xticks(rotation=90)
+                      plt.title("{} vs % {} with more than {} records (order)".format(column, self.target, MIN_DATA_TO_NODE))
+                      _pivot.sort_values(by="len", ascending=False, inplace=True)
+                      sns.barplot(
+                          x=_pivot[column],
+                          y=_pivot["mean"],
+                          order=_pivot[column].to_list()
+                      )
+                      plt.show()
+                  
+            plt.show()
+            
+            # if TARGET is NUMBER (this is part of the unvariant analysis)
+            if self.target is not None: # only for supervised learning.
+              if self.df_desc.loc[self.target,"type"]=="number":
+                  # And we finally check the potential transformation to obtain a normal distribution
+                  self.column_potential_transformation(column)
+               
+
         # To finish, we print the next column :-)
         column_i = self.df.columns.tolist().index(column)
         if (column_i+1) == len(self.df.columns): print("--> no more columns")
@@ -461,7 +604,8 @@ class EDA:
         
         #Variance Inflation Factor, only for numeric variables
         numeric_columns = self.df_desc[self.df_desc["type"]=="number"].index.to_list()
-        numeric_columns.remove(self.target) # we do not want the target to be part of the VIF
+        if self.target is not None: # only for supervised learning.
+          numeric_columns.remove(self.target) # we do not want the target to be part of the VIF
         vif = pd.DataFrame()
         vif["variables"] = numeric_columns
         vif["VIF"] = [variance_inflation_factor(self.df[numeric_columns].dropna().values, i) for i in range(len(numeric_columns))]
@@ -529,10 +673,13 @@ class EDA:
     def add_analysis(self, column, key, value=np.nan):
         '''
         add_analysis
+        Function that adds the analysis comment for the corresponding column to the rest of comments.
+        This dictionary will be the guide for the preprocessing phase
+
         parameters:
         column: name of the dataset's column
         key: what is the analysis about
-        value: the value of the kind
+        value: the value of the key
         '''
         self.analysis = self.analysis.append({'column':column, 'key':key, 'value':value}, ignore_index=True)
     
