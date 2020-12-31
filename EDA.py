@@ -8,6 +8,8 @@ from scipy.stats import norm, probplot
 
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
+import pickle
+
 class EDA:
     
     df = np.nan
@@ -17,12 +19,13 @@ class EDA:
     potential_features = {} # dictionary with potential features that we may have to create
     collinear = pd.DataFrame() # a dataframe that will include potential multicollinear columns to be droped.
     
-    def __init__(self, df, target=None, category_sensibility=10, forced_number=[], forced_binary=[], forced_category=[], forced_datetime=[], forced_datetime_orig_format=[], to_excel=False):
+    def __init__(self, df, set_index=None, target=None, category_sensibility=10, forced_number=[], forced_binary=[], forced_category=[], forced_datetime=[], forced_datetime_orig_format=[], to_excel=False):
         '''
         init EDA
         Class that allow a quick analysis of the dataset variables.
         Parameters:
         df: dataset to analyze
+        set_index: indicates the column we want to set as index (if any)
         target: name of the target column
         category_sensibility: number of unique values below which a numerical variable will be analyzed as a category
         forced_number: list of columns that we want to be treated as number even though they may not look like
@@ -37,6 +40,8 @@ class EDA:
 
         # Copy the original info to the class
         self.df = df.copy()
+        if set_index is not None:
+          self.df.set_index(set_index, inplace=True)
         self.target = target
 
         # Before doing anything, we must force convert datetime columns
@@ -273,7 +278,7 @@ class EDA:
         Returns
         Variable visualization
         '''
-        MAX_CATEGORIES_TO_PLOT = 300
+        MAX_CATEGORIES_TO_PLOT = 140
         MIN_DATA_TO_NODE = 400
 
         l_data = ["dtype","type","type_isforced","count","nulls","nulls_perc"]
@@ -691,3 +696,17 @@ class EDA:
         description: string with the description of this feature
         '''
         self.potential_features[feature] = {'description':description}
+    
+    @staticmethod
+    def to_pickle(instance, export_path, file_name):
+      '''
+      to_pickle
+      static method that creates a pickle of the EDA instance
+
+      Parameters
+      export_path: path where the pickle will be stored
+      file_name: name of the pickle, without pkl extension.
+      '''
+      with open(export_path + '/' + file_name + '.pkl', 'wb') as fid:
+        pickle.dump(instance, fid)
+      return HTML(f"<i>{file_name}.pkl</i> has been created in <i>{export_path}</i>")
