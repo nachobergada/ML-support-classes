@@ -1,4 +1,9 @@
 import pandas as pd
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+import seaborn as sns
+from IPython.core.display import display, HTML
 
 class ProcessDataset:
     '''
@@ -317,9 +322,72 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
         
-    
+    def to_cut(self, column, bins, values, labels=None, right=False, include_lowest=True, drop_original=True):
+      '''
+      to_cut
+      Transforms a numeric column into value bins depending on ranges of numbers.
+
+      Parameters
+      column: name of the column to transform
+      bins: array with the limits (left and right) of the bins 
+      values: array of values that will be assigned to each of the bins (this array has -1 dimensions compared to bins array)
+      labels: array (same length as values) with the descriptive values of the bins. If None, values will be used
+      right: False if we do not want to include the right value of each range
+      include_lowest: True if we want to include the first number of the bins array in the range.
+      drop_original: True if we want to drop the original column
+
+      Returns
+      updated dataset
+      '''
+
+      if labels is None: labels = values # if no description is given for the plot, then use values
+
+      t_ = f'<h3>--> {column} CUT Results</h3><br>'
+
+      s_ = self.data[column]
+      s_ = pd.cut(
+          s_,
+          bins,
+          right = right, 
+          include_lowest = include_lowest, 
+          labels = values
+      )
+      new_column_name = str(column) + str('' if drop_original else '_cut') # if we do not drop the original, we must differentiate both columns
+      s_.rename(new_column_name, inplace=True) # This column will have a new name
+
+      t_ += f'Original Data shape: {str(self.data.shape)}<br>'
+      # join the dataframe with the pivot
+      self.data = pd.concat([self.data, s_], axis=1)
+      if drop_original: 
+        self.data.drop(column, axis=1, inplace=True)
+      t_ += f'New X shape: {str(self.data.shape)}<br>'
+
+      display(HTML(t_))
+
+      # We plot the results to make sure we have done it correctly
+      fig, ax = plt.subplots(1, 1, figsize=(10,4))
+      s_ = self.data[new_column_name].value_counts().sort_index()
+
+      ax = sns.barplot(x = s_.index, y = s_, ax = ax)
+      plt.xticks(np.arange(0,len(labels)), labels=labels, rotation=45)
+      plt.grid(axis='y')
+      plt.title(f"Number of {column} per bin - new column {column + '_cut'}")
+
+      rects = ax.patches
+      labels = [str(np.round(100*i/s_.sum(), decimals=2))+"%" for i in s_]
+      for rect, label in zip(rects, labels):
+          height = rect.get_height()
+          ax.text(rect.get_x() + rect.get_width()/2, height + 5, label, ha='center', va='bottom')
+
+      plt.show()
+        
+      # Update analysis
+      self.update_analysis(column, "cut", 1)
+      # Add to report
+      self.update_report(t_)
+
     # TRANSFORMATIONS
-    def to_sqrt(self, column):
+    def to_sqrt(self, column, drop_original=True):
         '''
         to_sqrt
         Function that transforms column to sqrt and updates X dataframe
@@ -330,6 +398,7 @@ class ProcessDataset:
         Updated dataframe
         '''
         has_neg = self.data[column].min() < 0
+        new_column_name = str(column) + str('' if drop_original else '_sqrt') # if we do not drop the original, we must differentiate both columns
         
         t_ = '<h3>--> ' + column + ' SQRT Results</h3><br>'
         if has_neg:
@@ -338,9 +407,14 @@ class ProcessDataset:
             # Update analysis
             self.update_analysis(column, "sqrt", -1)
         else:
-            t_ += 'Original X shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
-            self.data[column] = self.data[column]**0.5
-            t_ += 'New X shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
+            t_ += 'Original Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
+            s_ = self.data[column]**0.5
+            s_.rename(new_column_name, inplace=True)
+            if drop_original: # we can overwrite the column
+              self.data[column] = s_
+            else:
+              self.data = pd.concat([self.data, s_], axis=1) # we must concat the new column
+            t_ += 'New Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[new_column_name].mean(),2)) + ' - skew: ' + str(round(self.data[new_column_name].skew(),2)) + '<br>'
             
             # Update analysis
             self.update_analysis(column, "sqrt", 1)
@@ -350,9 +424,9 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
     
-    def to_inv(self, column):
+    def to_inv(self, column, drop_original=True):
         '''
-        to_sqrt
+        to_inv
         Function that transforms column to 1/column and updates X dataframe
         Parameters
         column: name of the variable to transform
@@ -361,7 +435,8 @@ class ProcessDataset:
         Updated dataframe
         '''
         has_zeros = len(self.data[self.data[column]==0]) > 0
-        
+        new_column_name = str(column) + str('' if drop_original else '_inv') # if we do not drop the original, we must differentiate both columns
+
         t_ = '<h3>--> ' + column + ' INV Results</h3><br>'
         if has_zeros:
             t_ += 'WARNING: The column has negative values. Therefore, not able to inverse transform the variable.<br>'
@@ -370,8 +445,13 @@ class ProcessDataset:
             self.update_analysis(column, "inv", -1)
         else:
             t_ += 'Original Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
-            self.data[column] = self.data[column]**0.5
-            t_ += 'New Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
+            s_ = 1/self.data[column]
+            s_.rename(new_column_name, inplace=True)
+            if drop_original: # we can overwrite the column
+              self.data[column] = s_
+            else:
+              self.data = pd.concat([self.data, s_], axis=1) # we must concat the new column
+            t_ += 'New Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[new_column_name].mean(),2)) + ' - skew: ' + str(round(self.data[new_column_name].skew(),2)) + '<br>'
             
             # Update analysis
             self.update_analysis(column, "inv", 1)
@@ -381,7 +461,7 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
         
-    def to_log(self, column):
+    def to_log(self, column, drop_original=True):
         '''
         to_log
         Function that transforms column to log and updates X dataframe
@@ -393,6 +473,7 @@ class ProcessDataset:
         '''
         has_neg = self.data[column].min() < 0
         has_zeros = len(self.data[self.data[column]==0]) > 0
+        new_column_name = str(column) + str('' if drop_original else '_log') # if we do not drop the original, we must differentiate both columns
         
         t_ = '<h3>--> ' + column + ' LOG Results</h3><br>'
         
@@ -400,25 +481,34 @@ class ProcessDataset:
             t_ += 'WARNING: The column has negative values. Therefore, not able to log transform the variable.<br>'
             
             # Update analysis
-            self.update_analysis(column, "sqrt", -1)
+            self.update_analysis(column, "log", -1)
         else:
             t_ += 'Original Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
-
+            # Check if it has zeros to apply the right transformation
             if not has_zeros:
-                self.data[column] = np.log(self.data[column])
+                s_ = np.log(self.data[column])
             elif has_zeros:
-                self.data[column] = np.log(self.data[column] + 1)
+                s_ = np.log(self.data[column] + 1)
                 t_ += '--> note: variable has zeros. Log(s+1) has been applied ot avoid infinity.<br>'
-            t_ += 'New Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[column].mean(),2)) + ' - skew: ' + str(round(self.data[column].skew(),2)) + '<br>'
+            
+            # Manage the column name
+            s_.rename(new_column_name, inplace=True)
+            
+            if drop_original: # we can overwrite the column
+              self.data[column] = s_
+            else:
+              self.data = pd.concat([self.data, s_], axis=1) # we must concat the new column
+            t_ += 'New Data shape: ' + str(self.data.shape) + ' - mean: ' + str(round(self.data[new_column_name].mean(),2)) + ' - skew: ' + str(round(self.data[new_column_name].skew(),2)) + '<br>'
+            
             # Update analysis
-            self.update_analysis(column, "sqrt", 1)
+            self.update_analysis(column, "log", 1)
         
         display(HTML(t_))
         
         # Add to report
         self.update_report(t_)
     
-    def to_ratio(self, column, base, rounded=2):
+    def to_ratio(self, column, base, rounded=2, drop_original=True):
         '''
         to_ratio
         Function that obtains a ratio of the column values from a base
@@ -431,8 +521,24 @@ class ProcessDataset:
         Updated dataframe
         '''
         
+        new_column_name = str(column) + str('' if drop_original else '_rat') # if we do not drop the original, we must differentiate both columns
+        
         t_ = f'<h3>--> {column} RATIO Results</h3><br>'
-        self.data[column] = round(self.data[column]/self.data[base],2)
+        t_ += 'Original Data shape: ' + str(self.data.shape) + '<br>'
+        
+        # Generate new column
+        s_ = round(self.data[column]/self.data[base],2)
+
+        # Manage the column name
+        s_.rename(new_column_name, inplace=True)
+        
+        # Manage drop original
+        if drop_original: # we can overwrite the column
+          self.data[column] = s_
+        else:
+          self.data = pd.concat([self.data, s_], axis=1) # we must concat the new column
+
+        t_ += 'New Data shape: ' + str(self.data.shape) + '<br>'
         t_ += f'Column has been transformed to ratio base: {base}<br>'
         
         display(HTML(t_))
@@ -443,7 +549,7 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
         
-        
+    # DATA DROP
     def drop_outliers(self, column, threshold):
         '''
         drop_outliers
@@ -516,6 +622,7 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
     
+    # VALUES CORRECTION
     def replace(self, column, mapping):
         '''
         replace
@@ -560,6 +667,34 @@ class ProcessDataset:
         # Add to report
         self.update_report(t_)
         
+    # FINAL CHECK
+    def final_check(self):
+      '''
+      final_check
+      Method that checks for overall consistency before proceeding to the model
+
+      Parameters
+      None
+
+      Returns
+      Display results
+      '''
+      ok = True
+      # check if all columns have been processed
+      non_processed = self.analysis.loc[self.analysis["processed"]!=1]["processed"]
+      if (len(non_processed)>0):
+        display(HTML('<span style="font-weight:bold;color:#FF0000">There are still non processed columns</span>'))
+        display(non_processed)
+        ok = False
+      # check for nulls
+      if (self.data.isna().sum().sum()>0):
+        display(HTML('<span style="font-weight:bold;color:#FF0000">There are still null values</span>'))
+        display(self.data.columns[self.data.isna().any()].to_list())
+        ok = False
+      
+      if ok: display(HTML('<span style="font-weight:bold;">Everything is OK! Go and have fun with the model!</span>'))
+    
+    # ANALYSIS
     def update_analysis(self, column, action, result):
         
         self.analysis.loc[(self.analysis["column"]==column) & (self.analysis["key"]==action),"processed"] = result
@@ -572,6 +707,7 @@ class ProcessDataset:
         
         display(HTML(self.html_report))
         
+    # SPLIT STRATEGY
     def split_dev_test(self):
         '''
         split_dev_test
@@ -599,3 +735,32 @@ class ProcessDataset:
         
         '''
         return self.data.loc[index_submission,:]
+    
+    # IMPORT
+    @staticmethod
+    def from_pickle(import_path, file_name):
+      '''
+      from_pickle
+      static method that returns a EDA instance from the previous EDA process
+
+      Parameters
+      export_path: path where the pickle is stored
+      file_name: name of the pickle, without pkl extension
+      '''
+      with open(import_path + '/' + file_name + '.pkl', 'rb') as fid:
+        return pickle.load(fid)
+    
+    # EXPORT
+    @staticmethod
+    def to_pickle(instance, export_path, file_name):
+      '''
+      to_pickle
+      static method that creates a pickle of the EDA instance
+
+      Parameters
+      export_path: path where the pickle will be stored
+      file_name: name of the pickle, without pkl extension.
+      '''
+      with open(export_path + '/' + file_name + '.pkl', 'wb') as fid:
+        pickle.dump(instance, fid)
+      return HTML(f"<i>{file_name}.pkl</i> has been created in <i>{export_path}</i>")
