@@ -576,6 +576,59 @@ class EDA:
         column_i = self.df.columns.tolist().index(column)
         if (column_i+1) == len(self.df.columns): print("--> no more columns")
         if (column_i+1) < len(self.df.columns): print("--> next column ({} of {}): {}".format(column_i+1+1, len(self.df.columns), self.df.columns[column_i+1]))
+    
+    def show_cut(self, column, cut_bins, cut_labels, sns_labels, sns_title, sns_xlabel, sns_ylabel):
+        '''
+        show_cut
+        Function that shows how the column would like if categorized using pd.cut
+        
+        Parameters
+        -------
+        column: name of the column
+        cut_bins: ranges for bins
+        cut_labels: value to set for each of the bins
+        sns_labels: labels to print in plot
+        sns_title: title of the plot
+        sns_xlabel: xlabel of the plot
+        sns_ylabel: ylabel of the plot
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        if self.df[column].dtype == "object": # meaning, string
+            # We must generate a value_count
+            _df = pd.DataFrame(self.df[column].value_counts(), columns=[column], index=self.df[column].value_counts().index)
+        else:
+            _df = self.df[[column]].sort_index()
+        
+        _df[column + "_cut"] = pd.cut(
+            _df[column],
+            cut_bins,
+            right = False, 
+            include_lowest = True, 
+            labels = cut_labels
+        )
+        fig, ax = plt.subplots(1, 1, figsize=(10,4))
+        _s = _df[column + "_cut"].value_counts().sort_index()
+        
+        ax = sns.barplot(x = _s.index, y = _s, ax = ax)
+        plt.xticks(np.arange(0,len(sns_labels)), labels=sns_labels, rotation=45)
+        plt.grid(axis='y')
+        plt.title(sns_title)
+        plt.xlabel(sns_xlabel)
+        plt.ylabel(sns_ylabel)
+        
+        rects = ax.patches
+        labels = [str(np.round(100*i/_s.sum(), decimals=0))+"%" for i in _s]
+        for rect, label in zip(rects, labels):
+            height = rect.get_height()
+            ax.text(rect.get_x() + rect.get_width()/2, height + 1, label, ha='center', va='bottom')
+        
+        plt.show()
+        
 
     def multivar(self):
         '''
