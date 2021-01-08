@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy as np
 import pickle
+import matplotlib.pyplot as plt
 import seaborn as sns
+from IPython.core.display import display, HTML
 
 class ProcessDataset:
     '''
